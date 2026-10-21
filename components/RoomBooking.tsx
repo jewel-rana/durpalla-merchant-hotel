@@ -9,7 +9,9 @@ import { stayQuery } from "@/lib/stay";
 /** Rate plans from GET hotel/rooms/{id}; totals from POST hotel/quote (null when the room cannot be quoted for these dates). */
 export function RoomBooking({ room, stay, nights, stayLabel, quote, before, after }: { room: RoomType; stay: SearchParams; nights: number; stayLabel: string; quote: Quote | null; before: ReactNode; after: ReactNode }) {
   const router = useRouter();
-  const [planId, setPlanId] = useState(room.ratePlans[0].id);
+  const [planId, setPlan] = useState(quote?.ratePlanId ?? room.ratePlans[0].id);
+  // The quote is server-rendered for ?plan=; changing plan re-renders it with that rate plan's prices.
+  const setPlanId = (id: string) => { setPlan(id); router.replace(`/rooms/${room.id}?${stayQuery(stay, { plan: id })}`, { scroll: false }); };
   const plan = room.ratePlans.find((p) => p.id === planId) ?? room.ratePlans[0];
   const book = () => router.push(`/checkout?${stayQuery(stay, { room: room.id, plan: plan.id })}`);
 

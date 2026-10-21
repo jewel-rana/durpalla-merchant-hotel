@@ -15,7 +15,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Pro
   const roomId = String(sp.room ?? "");
   if (!roomId) return <StateMessage title="No room selected" body="Choose a room and rate first." action={{ href: "/rooms", label: "See rooms" }} />;
   const me = await requireMe(`/checkout?${new URLSearchParams(Object.entries(sp).map(([k, v]) => [k, String(Array.isArray(v) ? v[0] : v ?? "")]))}`);
-  const [room, quote] = await Promise.all([getRoom(roomId), getQuote(roomId, stay).catch(() => null)]);
+  const planId = typeof sp.plan === "string" ? sp.plan : undefined;
+  const [room, quote] = await Promise.all([getRoom(roomId), getQuote(roomId, stay, planId).catch(() => null)]);
   if (!quote) return <StateMessage tone="error" title="Room not available" body="This room cannot be booked for the selected dates." action={{ href: "/rooms", label: "See other rooms" }} />;
-  return <CheckoutForm room={room} stay={stay} planId={String(sp.plan ?? room.ratePlans[0].id)} quote={quote} phone={me.phone} />;
+  return <CheckoutForm room={room} stay={stay} planId={quote?.ratePlanId ?? planId ?? room.ratePlans[0].id} quote={quote} phone={me.phone} />;
 }
