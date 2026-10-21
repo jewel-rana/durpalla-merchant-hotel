@@ -1,16 +1,16 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import type { RoomType, SearchParams } from "@/lib/types";
+import type { Quote, RoomType, SearchParams } from "@/lib/types";
 import { taka } from "@/lib/merchant";
-import { price } from "@/lib/mock";
+import { QuoteLines } from "./QuoteLines";
 import { stayQuery } from "@/lib/stay";
 
-export function RoomBooking({ room, stay, nights, stayLabel, before, after }: { room: RoomType; stay: SearchParams; nights: number; stayLabel: string; before: ReactNode; after: ReactNode }) {
+/** Rate plans from GET hotel/rooms/{id}; totals from POST hotel/quote (null when the room cannot be quoted for these dates). */
+export function RoomBooking({ room, stay, nights, stayLabel, quote, before, after }: { room: RoomType; stay: SearchParams; nights: number; stayLabel: string; quote: Quote | null; before: ReactNode; after: ReactNode }) {
   const router = useRouter();
-  const [planId, setPlanId] = useState(room.ratePlans[1]?.id ?? room.ratePlans[0].id);
+  const [planId, setPlanId] = useState(room.ratePlans[0].id);
   const plan = room.ratePlans.find((p) => p.id === planId) ?? room.ratePlans[0];
-  const pb = price(plan.price, nights, stay.rooms, stay.promo);
   const book = () => router.push(`/checkout?${stayQuery(stay, { room: room.id, plan: plan.id })}`);
 
   return (
@@ -25,7 +25,7 @@ export function RoomBooking({ room, stay, nights, stayLabel, before, after }: { 
                 <input type="radio" name="plan" value={p.id} checked={planId === p.id} onChange={() => setPlanId(p.id)} className="mt-1 accent-[var(--accent)]" />
                 <span className="flex-1">
                   <span className="block font-semibold">{p.name}</span>
-                  <span className="mt-1 block space-y-0.5 text-sm text-slate-600">{p.perks.map((x) => <span key={x} className="block">• {x}</span>)}</span>
+                  <span className="mt-1 block space-y-0.5 text-sm text-slate-600">{p.perks.map((x) => <span key={x} className="block">• {x}</span>)}{p.checkIn && <span className="block">• Check-in from {p.checkIn}{p.checkOut ? `, check-out until ${p.checkOut}` : ""}</span>}</span>
                   {!p.refundable && <span className="mt-1 inline-block rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">Non-refundable</span>}
                 </span>
                 <span className="text-right"><span className="block text-lg font-extrabold text-accent-dark">{taka(p.price)}</span><span className="text-xs text-slate-500">/ night</span></span>
@@ -41,22 +41,16 @@ export function RoomBooking({ room, stay, nights, stayLabel, before, after }: { 
           <p className="text-sm text-slate-500">{plan.name}</p>
           <p className="text-2xl font-extrabold text-accent-dark">{taka(plan.price)} <span className="text-sm font-semibold text-slate-500">/ night</span></p>
           <p className="mt-2 text-sm text-slate-600">{stayLabel}</p>
-          <dl className="mt-4 space-y-1.5 border-t pt-3 text-sm">
-            <div className="flex justify-between"><dt>{taka(plan.price)} × {nights} night{nights > 1 ? "s" : ""} × {stay.rooms}</dt><dd>{taka(pb.roomTotal)}</dd></div>
-            {pb.discount > 0 && <div className="flex justify-between text-emerald-700"><dt>Promo</dt><dd>-{taka(pb.discount)}</dd></div>}
-            <div className="flex justify-between"><dt>Service charge 10%</dt><dd>{taka(pb.serviceCharge)}</dd></div>
-            <div className="flex justify-between"><dt>VAT 15%</dt><dd>{taka(pb.vat)}</dd></div>
-            <div className="flex justify-between border-t pt-2 text-base font-bold"><dt>Total</dt><dd className="text-accent-dark">{taka(pb.total)}</dd></div>
-          </dl>
-          <button type="button" className="btn-accent mt-4 w-full" onClick={book}>Book now</button>
-          <p className="mt-2 text-center text-xs text-slate-500">Best rate guaranteed · Powered by Durpalla Limited</p>
+          <div className="mt-4 border-t pt-3">{quote ? <QuoteLines q={quote} stay={stay} /> : <p className="text-sm text-amber-700">Not available for these dates.</p>}</div>
+          <button type="button" className="btn-accent mt-4 w-full" disabled={!quote} onClick={book}>Book now</button>
+          <p className="mt-2 text-center text-xs text-slate-500">Best rate when you book direct</p>
         </div>
       </aside>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-white p-3 shadow-[0_-6px_20px_rgba(0,0,0,0.08)] lg:hidden">
         <div className="mx-auto flex max-w-xl items-center justify-between gap-3">
-          <div><p className="text-xs text-slate-500">{plan.name} · {nights} night{nights > 1 ? "s" : ""}</p><p className="text-lg font-extrabold text-accent-dark">{taka(pb.total)}</p></div>
-          <button type="button" className="btn-accent" onClick={book}>Book now</button>
+          <div><p className="text-xs text-slate-500">{plan.name} · {nights} night{nights > 1 ? "s" : ""}</p><p className="text-lg font-extrabold text-accent-dark">{quote ? taka(quote.breakdown.total) : "—"}</p></div>
+          <button type="button" className="btn-accent" disabled={!quote} onClick={book}>Book now</button>
         </div>
       </div>
     </div>

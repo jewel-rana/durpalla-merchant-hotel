@@ -4,14 +4,15 @@ import { useEffect, useRef, useState } from "react";
 
 export interface StayQuery { checkIn: string; checkOut: string; adults: number; children: number; rooms: number; promo?: string }
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
 const addDays = (d: string, n: number) => {
   const x = new Date(d); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10);
 };
 
 export function BookingForm({ initial, compact = false }: { initial?: Partial<StayQuery>; compact?: boolean }) {
   const router = useRouter();
-  const [checkIn, setIn] = useState(initial?.checkIn ?? "2026-10-24");
-  const [checkOut, setOut] = useState(initial?.checkOut ?? "2026-10-27");
+  const [checkIn, setIn] = useState(initial?.checkIn || addDays(todayIso(), 1));
+  const [checkOut, setOut] = useState(initial?.checkOut || addDays(todayIso(), 2));
   const [adults, setAdults] = useState(initial?.adults ?? 2);
   const [children, setChildren] = useState(initial?.children ?? 0);
   const [rooms, setRooms] = useState(initial?.rooms ?? 1);
@@ -53,7 +54,7 @@ export function BookingForm({ initial, compact = false }: { initial?: Partial<St
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_1.2fr_1fr_auto] md:items-end">
         <div className="grid grid-cols-2 gap-3 md:contents">
           <div><label className="label" htmlFor="ci">Check-in</label>
-            <input id="ci" type="date" className="field" value={checkIn} min="2026-10-20" required onChange={(e) => { setIn(e.target.value); if (checkOut <= e.target.value) setOut(addDays(e.target.value, 1)); }} /></div>
+            <input id="ci" type="date" className="field" value={checkIn} min={todayIso()} required onChange={(e) => { setIn(e.target.value); if (checkOut <= e.target.value) setOut(addDays(e.target.value, 1)); }} /></div>
           <div><label className="label" htmlFor="co">Check-out</label>
             <input id="co" type="date" className="field" value={checkOut} min={addDays(checkIn, 1)} required onChange={(e) => setOut(e.target.value)} /></div>
         </div>

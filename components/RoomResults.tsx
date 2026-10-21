@@ -6,22 +6,23 @@ import type { RoomType, SearchParams } from "@/lib/types";
 import { taka } from "@/lib/merchant";
 import { stayQuery } from "@/lib/stay";
 
-const beds = ["King", "Twin", "2 Bedrooms"];
-const views = ["Sea view", "Garden view", "Pool view"];
-const amenityList = ["Balcony", "Bathtub", "Private pool", "Lounge access", "Kitchenette"];
 
 export function RoomResults({ rooms, stay, nights }: { rooms: RoomType[]; stay: SearchParams; nights: number }) {
+  const beds = useMemo(() => [...new Set(rooms.map((r) => r.bed).filter(Boolean))], [rooms]);
+  const views = useMemo(() => [...new Set(rooms.map((r) => r.category).filter(Boolean))], [rooms]);
+  const amenityList = useMemo(() => [...new Set(rooms.flatMap((r) => r.amenities))].slice(0, 8), [rooms]);
+  const cap = useMemo(() => Math.max(1000, Math.ceil(Math.max(0, ...rooms.map((r) => r.ratePlans[0].price || r.basePrice)) / 500) * 500), [rooms]);
   const [bed, setBed] = useState<string[]>([]);
   const [view, setView] = useState<string[]>([]);
   const [am, setAm] = useState<string[]>([]);
-  const [maxPrice, setMaxPrice] = useState(30000);
+  const [maxPrice, setMaxPrice] = useState(Number.POSITIVE_INFINITY);
   const [sort, setSort] = useState("recommended");
   const [sheet, setSheet] = useState(false);
   const toggle = (a: string[], set: (v: string[]) => void, v: string) => set(a.includes(v) ? a.filter((x) => x !== v) : [...a, v]);
 
   const list = useMemo(() => {
-    const r = rooms.filter((x) => (!bed.length || bed.includes(x.bed)) && (!view.length || view.includes(x.view)) && am.every((a) => x.amenities.includes(a)) && x.ratePlans[0].price <= maxPrice);
-    return [...r].sort((a, b) => (sort === "low" ? a.basePrice - b.basePrice : sort === "high" ? b.basePrice - a.basePrice : sort === "rating" ? b.rating - a.rating : 0));
+    const r = rooms.filter((x) => (!bed.length || bed.includes(x.bed)) && (!view.length || view.includes(x.category)) && am.every((a) => x.amenities.includes(a)) && (x.ratePlans[0].price || x.basePrice) <= maxPrice);
+    return [...r].sort((a, b) => (sort === "low" ? a.basePrice - b.basePrice : sort === "high" ? b.basePrice - a.basePrice : 0));
   }, [rooms, bed, view, am, maxPrice, sort]);
 
   const group = (title: string, opts: string[], sel: string[], set: (v: string[]) => void) => (
@@ -33,13 +34,13 @@ export function RoomResults({ rooms, stay, nights }: { rooms: RoomType[]; stay: 
   const filters = (
     <div className="space-y-6">
       <div>
-        <label htmlFor="price" className="mb-2 block text-sm font-bold">Max price / night: {taka(maxPrice)}</label>
-        <input id="price" type="range" min={5000} max={30000} step={500} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-[var(--brand)]" />
+        <label htmlFor="price" className="mb-2 block text-sm font-bold">Max price / night: {taka(Math.min(maxPrice, cap))}</label>
+        <input id="price" type="range" min={0} max={cap} step={500} value={Math.min(maxPrice, cap)} onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-[var(--brand)]" />
       </div>
-      {group("Bed type", beds, bed, setBed)}
-      {group("View", views, view, setView)}
-      {group("Amenities", amenityList, am, setAm)}
-      <button type="button" className="text-sm font-semibold text-brand underline" onClick={() => { setBed([]); setView([]); setAm([]); setMaxPrice(30000); }}>Reset filters</button>
+      {beds.length > 1 && group("Bed type", beds, bed, setBed)}
+      {views.length > 1 && group("Category", views, view, setView)}
+      {amenityList.length > 0 && group("Amenities", amenityList, am, setAm)}
+      <button type="button" className="text-sm font-semibold text-brand underline" onClick={() => { setBed([]); setView([]); setAm([]); setMaxPrice(Number.POSITIVE_INFINITY); }}>Reset filters</button>
     </div>
   );
 
@@ -53,23 +54,22 @@ export function RoomResults({ rooms, stay, nights }: { rooms: RoomType[]; stay: 
             <button type="button" className="btn-outline !py-1.5 text-sm lg:hidden" onClick={() => setSheet(true)}>Filters</button>
             <label className="sr-only" htmlFor="sort">Sort by</label>
             <select id="sort" className="field !w-auto !py-1.5" value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="recommended">Recommended</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option><option value="rating">Top rated</option>
+              <option value="recommended">Recommended</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option>
             </select>
           </div>
         </div>
         <ul className="space-y-4">
-          {list.map((r) => {
-            const from = r.ratePlans[0].price;
+          {list.map((r, i) => {
+            const from = r.ratePlans[0].price || r.basePrice;
             return (
               <li key={r.id} className="card grid overflow-hidden md:grid-cols-[280px_1fr]">
-                <div className="relative h-52 md:h-full"><Image src={r.images[0]} alt={r.name} fill sizes="(min-width:768px) 280px, 100vw" className="object-cover" /></div>
+                <div className="relative h-52 md:h-full"><Image src={r.images[0] ?? ["/img/room1.jpg", "/img/suite.jpg", "/img/room3.jpg"][i % 3]} alt={r.name} fill sizes="(min-width:768px) 280px, 100vw" className="object-cover" /></div>
                 <div className="flex flex-col gap-3 p-4 md:flex-row md:p-5">
                   <div className="flex-1">
                     <h3 className="text-lg font-bold">{r.name}</h3>
-                    <p className="text-sm text-slate-500">{r.size} m² · {r.bed} · {r.view} · up to {r.maxGuests} guests</p>
-                    <p className="mt-1 text-xs font-semibold text-brand">★ {r.rating} · {r.available <= 3 ? <span className="text-red-600">Only {r.available} left</span> : `${r.available} available`}</p>
+                    {r.summary && <p className="text-sm text-slate-500">{r.summary}</p>}
+                    {r.available != null && <p className="mt-1 text-xs font-semibold text-brand">{r.available <= 3 ? <span className="text-red-600">Only {r.available} left</span> : `${r.available} available`}</p>}
                     <ul className="mt-3 flex flex-wrap gap-1.5">{r.amenities.slice(0, 5).map((a) => <li key={a} className="rounded-md bg-brand-light px-2 py-0.5 text-xs text-brand">{a}</li>)}</ul>
-                    <p className="mt-3 text-xs text-emerald-700">✓ Free cancellation on breakfast plans</p>
                   </div>
                   <div className="flex items-end justify-between gap-3 border-t pt-3 md:w-44 md:flex-col md:border-0 md:pt-0">
                     <div className="md:text-right">
