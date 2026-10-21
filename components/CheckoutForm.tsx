@@ -2,43 +2,52 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { Guest, PaymentMethod, RoomType, SearchParams } from "@/lib/types";
-import { api } from "@/lib/api";
+import type { Guest, Quote, RoomType, SearchParams } from "@/lib/types";
 import { taka } from "@/lib/merchant";
-import { nightsBetween, price } from "@/lib/mock";
+import { useSite } from "@/lib/site-context";
 import { fmtStay } from "@/lib/stay";
+import { createHotelBooking } from "@/lib/hotel-actions";
+import { initiatePayment } from "@/lib/auth-actions";
+import { QuoteLines } from "./QuoteLines";
 
-const methods: { k: PaymentMethod; l: string; c: string }[] = [
-  { k: "bkash", l: "bKash", c: "text-[#E2136E]" }, { k: "nagad", l: "Nagad", c: "text-[#EC1C24]" },
-  { k: "rocket", l: "Rocket", c: "text-[#8C3494]" }, { k: "card", l: "Card (VISA / Mastercard / AMEX)", c: "text-[#1A1F71]" },
-];
-const requests = ["High floor", "Sea-facing", "Twin beds", "Late check-in", "Honeymoon setup", "Airport pickup"];
+const brand: Record<string, string> = { bkash: "text-[#E2136E]", nagad: "text-[#EC1C24]", rocket: "text-[#8C3494]", sslcommerz: "text-[#1A1F71]", card: "text-[#1A1F71]" };
+const requests = ["High floor", "Twin beds", "Late check-in", "Airport pickup", "Quiet room"];
 
-export function CheckoutForm({ room, stay, planId }: { room: RoomType; stay: SearchParams; planId: string }) {
+/** 🔒 POST hotel/holds → POST bookings {vertical:"hotel", holdId} → POST payments/initiate. Prices are the API quote. */
+export function CheckoutForm({ room, stay, planId, quote, phone }: { room: RoomType; stay: SearchParams; planId: string; quote: Quote; phone?: string }) {
+  const site = useSite();
   const router = useRouter();
+  const methods = site.payments.methods;
   const plan = room.ratePlans.find((p) => p.id === planId) ?? room.ratePlans[0];
-  const nights = nightsBetween(stay.checkIn, stay.checkOut);
-  const pb = price(plan.price, nights, stay.rooms, stay.promo);
-  const [g, setG] = useState<Guest>({ firstName: "", lastName: "", phone: "", email: "", nationality: "Bangladeshi" });
+  const [g, setG] = useState<Guest>({ firstName: "", lastName: "", phone: (phone ?? "").replace(/^\+?88/, ""), email: "", nationality: "Bangladeshi" });
   const [arrival, setArrival] = useState("14:00");
   const [chips, setChips] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
-  const [method, setMethod] = useState<PaymentMethod>("bkash");
+  const [method, setMethod] = useState(methods[0]?.code ?? "");
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [key] = useState(() => crypto.randomUUID());
   const upd = (p: Partial<Guest>) => setG({ ...g, ...p });
+  const total = quote.breakdown.total;
 
   async function pay(e: React.FormEvent) {
     e.preventDefault();
     if (!/^01\d{9}$/.test(g.phone)) return setErr("Enter a valid 11-digit mobile number (01XXXXXXXXX).");
+    if (!method) return setErr("Online payment is not available for this property yet.");
     if (!agree) return setErr("Please accept the hotel policies to continue.");
     setErr(""); setBusy(true);
-    try {
-      const b = await api.createBooking({ roomId: room.id, ratePlanId: plan.id, checkIn: stay.checkIn, checkOut: stay.checkOut, adults: stay.adults, children: stay.children, rooms: stay.rooms, guest: g, arrivalTime: arrival, specialRequests: [...chips, notes].filter(Boolean).join(", "), paymentMethod: method, promo: stay.promo });
-      const p = await api.initiatePayment(b.id, method);
-      if (p.redirectUrl.startsWith("http")) window.location.href = p.redirectUrl; else router.push(p.redirectUrl);
-    } catch { setErr("Payment could not be started. Please try again."); setBusy(false); }
+    const b = await createHotelBooking({
+      roomTypeId: room.id, checkIn: stay.checkIn, checkOut: stay.checkOut, adults: stay.adults, children: stay.children, rooms: stay.rooms,
+      promoCode: stay.promo, idempotencyKey: key,
+      guest: { name: `${g.firstName} ${g.lastName}`.trim(), mobile: g.phone, email: g.email || undefined, nationality: g.nationality, arrivalTime: arrival, specialRequests: [...chips, notes].filter(Boolean).join(", ") || undefined },
+    });
+    if (!b.ok) { setBusy(false); return setErr(b.code === "ROOM_UNAVAILABLE" ? "This room just sold out for your dates. Please choose another." : b.message); }
+    const p = await initiatePayment(b.data.id, method);
+    if (p.ok && p.data.redirectUrl) { window.location.href = p.data.redirectUrl; return; }
+    setBusy(false);
+    if (!p.ok) setErr(`Booking ${b.data.pnr ?? b.data.id} was created but payment could not start: ${p.message}`);
+    router.push(`/account/bookings/${b.data.id}`);
   }
 
   return (
@@ -72,13 +81,14 @@ export function CheckoutForm({ room, stay, planId }: { room: RoomType; stay: Sea
           <legend className="float-left mb-3 w-full font-semibold">Payment method</legend>
           <div className="clear-both grid gap-3 sm:grid-cols-2">
             {methods.map((m) => (
-              <label key={m.k} className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3 ${method === m.k ? "border-accent bg-amber-50" : "border-slate-200"}`}>
-                <input type="radio" name="method" value={m.k} checked={method === m.k} onChange={() => setMethod(m.k)} className="accent-[var(--accent)]" />
-                <span className={`font-extrabold ${m.c}`}>{m.l}</span>
+              <label key={m.code} className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3 ${method === m.code ? "border-accent bg-amber-50" : "border-slate-200"}`}>
+                <input type="radio" name="method" value={m.code} checked={method === m.code} onChange={() => setMethod(m.code)} className="accent-[var(--accent)]" />
+                <span className={`font-extrabold ${brand[m.code] ?? "text-slate-800"}`}>{m.name}</span>
               </label>
             ))}
+            {!methods.length && <p className="text-sm text-slate-500">Online payment: coming soon for this property.</p>}
           </div>
-          <p className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">🔒 Secure payment powered by <b>Durpalla Limited</b></p>
+          <p className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">🔒 Secure payment{site.payments.mode === "durpalla" ? <> powered by <b>Durpalla Limited</b></> : null}</p>
         </fieldset>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1 accent-[var(--brand)]" /> I agree to the hotel policies, cancellation and refund terms.</label>
         {err && <p role="alert" className="text-sm text-red-600">{err}</p>}
@@ -87,25 +97,19 @@ export function CheckoutForm({ room, stay, planId }: { room: RoomType; stay: Sea
       <aside className="h-fit lg:sticky lg:top-20">
         <div className="card p-5">
           <div className="flex gap-3">
-            <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-lg"><Image src={room.images[0]} alt={room.name} fill sizes="96px" className="object-cover" /></div>
-            <div><p className="font-bold">{room.name}</p><p className="text-sm text-slate-500">{plan.name}</p><p className="text-xs text-slate-500">{plan.refundable ? "Free cancellation until 48h before" : "Non-refundable"}</p></div>
+            <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-lg"><Image src={room.images[0] ?? "/img/room1.jpg"} alt={room.name} fill sizes="96px" className="object-cover" /></div>
+            <div><p className="font-bold">{room.name}</p><p className="text-sm text-slate-500">{plan.name}</p><p className="text-xs text-slate-500">{plan.refundable ? "Refundable (merchant cancellation policy)" : "Non-refundable"}</p></div>
           </div>
           <p className="mt-3 rounded-lg bg-brand-light p-2.5 text-sm text-brand">{fmtStay(stay)}</p>
           <h2 className="mb-2 mt-4 font-bold">Price breakdown</h2>
-          <dl className="space-y-1.5 text-sm">
-            <div className="flex justify-between gap-2"><dt>{taka(plan.price)} × {nights} night{nights > 1 ? "s" : ""} × {stay.rooms} room{stay.rooms > 1 ? "s" : ""}</dt><dd>{taka(pb.roomTotal)}</dd></div>
-            {pb.discount > 0 && <div className="flex justify-between text-emerald-700"><dt>Promo {stay.promo}</dt><dd>-{taka(pb.discount)}</dd></div>}
-            <div className="flex justify-between"><dt>Service charge (10%)</dt><dd>{taka(pb.serviceCharge)}</dd></div>
-            <div className="flex justify-between"><dt>VAT (15%)</dt><dd>{taka(pb.vat)}</dd></div>
-            <div className="flex justify-between border-t pt-2 text-base font-bold"><dt>Total payable</dt><dd className="text-accent-dark">{taka(pb.total)}</dd></div>
-          </dl>
-          <button type="submit" className="btn-accent mt-4 hidden w-full lg:flex" disabled={busy}>{busy ? "Redirecting to gateway…" : `Pay ${taka(pb.total)}`}</button>
+          <QuoteLines q={quote} stay={stay} />
+          <button type="submit" className="btn-accent mt-4 hidden w-full lg:flex" disabled={busy}>{busy ? "Redirecting to gateway…" : `Pay ${taka(total)}`}</button>
         </div>
       </aside>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-white p-3 shadow-[0_-6px_20px_rgba(0,0,0,0.08)] lg:hidden">
         <div className="mx-auto flex max-w-xl items-center justify-between gap-3">
-          <div><p className="text-xs text-slate-500">Total · {nights} night{nights > 1 ? "s" : ""}, incl. VAT</p><p className="text-lg font-extrabold text-accent-dark">{taka(pb.total)}</p></div>
+          <div><p className="text-xs text-slate-500">Total · {quote.breakdown.nights} night{quote.breakdown.nights > 1 ? "s" : ""}, incl. VAT</p><p className="text-lg font-extrabold text-accent-dark">{taka(total)}</p></div>
           <button type="submit" className="btn-accent" disabled={busy}>{busy ? "Redirecting…" : "Pay now"}</button>
         </div>
       </div>
