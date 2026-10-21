@@ -4,18 +4,20 @@ import { BookingForm } from "@/components/BookingForm";
 import { Gallery } from "@/components/Gallery";
 import { taka } from "@/lib/merchant";
 import { getHome, getSite } from "@/lib/site";
-import { featuredRooms, getProperties } from "@/lib/hotel";
+import { featuredRooms, getContent, getProperties } from "@/lib/hotel";
 
 const roomImages = ["/img/room1.jpg", "/img/suite.jpg", "/img/room3.jpg"];
 
 
 export default async function Home() {
-  const [merchant, home, properties] = await Promise.all([getSite(), getHome().catch(() => ({} as Record<string, unknown>)), getProperties().catch(() => [])]);
+  const [merchant, home, properties, content] = await Promise.all([getSite(), getHome().catch(() => ({} as Record<string, unknown>)), getProperties().catch(() => []), getContent()]);
   const rooms = featuredRooms(home);
   const hotel = properties[0];
   const facilities = [...new Set(properties.flatMap((p) => p.facilities))];
   const gallery = [...new Set([...merchant.banners.map((b) => b.image), ...properties.flatMap((p) => p.images)])];
   const address = hotel?.address || merchant.contact.address;
+  const { reviews, reviewStats } = content;
+  const highlights = content.locationHighlights.length ? content.locationHighlights : hotel?.locationHighlights ?? [];
   return (
     <>
       <section className="relative isolate">
@@ -58,11 +60,30 @@ export default async function Home() {
         <Gallery images={gallery} alt={`${merchant.name} photo`} />
       </section>}
 
+      {reviews.length > 0 && <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-14 md:px-8">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <h2 className="text-2xl font-bold">Guest reviews</h2>
+          {reviewStats.average != null && <span className="rounded-lg bg-brand px-2.5 py-1 text-lg font-extrabold text-white">{reviewStats.average}/5</span>}
+          {reviewStats.count > 0 && <span className="text-sm text-slate-500">{reviewStats.count.toLocaleString()} verified review{reviewStats.count === 1 ? "" : "s"}</span>}
+        </div>
+        <div className="grid gap-5 md:grid-cols-3">
+          {reviews.slice(0, 6).map((r) => (
+            <figure key={r.id} className="card p-5">
+              <figcaption className="font-semibold">{r.author || "Guest"}</figcaption>
+              {properties.length > 1 && r.hotelName && <p className="text-xs text-slate-500">{r.hotelName}</p>}
+              <p className="mt-2 text-amber-500" aria-label={`${r.rating} out of 5`}>{"★".repeat(Math.round(r.rating))}<span className="text-slate-300">{"★".repeat(5 - Math.round(r.rating))}</span></p>
+              {r.text && <blockquote className="mt-1 text-sm text-slate-600">{r.text}</blockquote>}
+            </figure>
+          ))}
+        </div>
+      </section>}
+
       <section id="location" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-14 md:px-8">
         <div className="card grid overflow-hidden md:grid-cols-[1fr_1.4fr]">
           <div className="p-6 md:p-8">
             <h2 className="text-2xl font-bold">Location</h2>
             <p className="mt-2 text-slate-600">{address}</p>
+            {highlights.length > 0 && <ul className="mt-4 space-y-2 text-sm">{highlights.map((h) => <li key={h}>📍 {h}</li>)}</ul>}
             <p className="mt-4 text-sm"><b>Reservations:</b> {merchant.contact.hotline}<br />{merchant.contact.email}</p>
             {hotel?.checkIn && <p className="mt-2 text-sm">Check-in from {hotel.checkIn}{hotel.checkOut ? ` · Check-out until ${hotel.checkOut}` : ""}</p>}
           </div>

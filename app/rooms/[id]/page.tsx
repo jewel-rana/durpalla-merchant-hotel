@@ -17,9 +17,10 @@ export async function generateMetadata({ params }: P): Promise<Metadata> {
 
 export default async function RoomPage({ params, searchParams }: P) {
   const { id } = await params;
-  const stay = parseStay(await searchParams);
+  const sp = await searchParams;
+  const stay = parseStay(sp);
   const room = await getRoom(id).catch((e) => { if (e instanceof ApiError && e.status === 404) notFound(); throw e; });
-  const [merchant, quote] = await Promise.all([getSite(), getQuote(id, stay).catch(() => null)]);
+  const [merchant, quote] = await Promise.all([getSite(), getQuote(id, stay, typeof sp.plan === "string" ? sp.plan : undefined).catch(() => null)]);
   const policies = Object.entries(merchant.policies);
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 pb-32 md:px-8 lg:pb-12">

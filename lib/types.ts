@@ -4,11 +4,17 @@ export interface RatePlan { id: string; name: string; perks: string[]; price: nu
 export interface RoomType {
   id: string; hotelId: string; name: string; category: string; bed: string; maxGuests: number;
   images: string[]; summary: string; description: string; amenities: string[];
-  basePrice: number; ratePlans: RatePlan[]; available: number | null;
+  basePrice: number; ratePlans: RatePlan[]; available: number | null; sizeSqm: number | null; view: string;
 }
-export interface Property { id: string; name: string; description: string; address: string; images: string[]; facilities: string[]; checkIn?: string; checkOut?: string; starRating?: number }
+export interface Review { id: string; author?: string | null; rating: number; text?: string | null; date?: string | null; hotelName?: string | null }
+export interface HotelContent {
+  reviews: Review[]; reviewStats: { count: number; average: number | null };
+  locationHighlights: string[]; stats: { properties: number; guests: number; rating: number | null; reviews: number };
+}
+export interface Property { id: string; name: string; description: string; address: string; images: string[]; facilities: string[]; checkIn?: string; checkOut?: string; starRating?: number; rating?: number; reviewCount?: number; locationHighlights: string[] }
 export interface FeeLine { code: string; label: string; percent?: number; amount: number }
 export interface Quote {
+  ratePlanId?: string;
   breakdown: { nights: number; rooms: number; roomTotal: number; discount: number; serviceChargePercent: number; serviceCharge: number; vatPercent: number; vat: number; subtotal: number; gatewayFee: number; total: number };
   lines: FeeLine[];
   payment: { mode: string; gatewayFeeBearer: string; gatewayFeePercent: number; baseAmount: number; gatewayFee: number; payable: number };
